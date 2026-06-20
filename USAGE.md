@@ -2,133 +2,70 @@
 
 ## Purpose
 
-freediag is an open-source OBD-II and K-line (ISO 14230 / KWP2000) scan
-tool. It provides a protocol stack for communicating with vehicle ECUs over
-serial K-line adapters and a CLI scan tool (`freediag`) for interactive
-diagnostics.
+freediag is an open-source K-line / OBD-II diagnostic library and CLI tool.
+In this distribution it is used exclusively as the **K-line transport layer for
+nisprog** — it handles low-level serial framing, ISO 14230 (KWP2000) protocol
+timing, and interface adapter communication.
 
-Within the nisprog ecosystem, freediag is used as the **communication
-library** that handles K-line framing, timing, and byte exchange. nisprog
-builds on top of freediag's layer-2/layer-3 stack rather than calling it
-as a separate binary.
-
-Standalone `freediag` binary usage is documented below.
+You do not normally run `freediag` directly. nisprog spawns it internally based
+on the `set interface` and `set port` settings you configure at the `nisprog>`
+prompt.
 
 ---
 
-## freediag (standalone scan tool)
+## Standalone CLI (scantool)
 
-Launches an interactive diagnostic session with a vehicle ECU over a
-serial K-line adapter. Supports OBD-II service modes (Mode 01–09), live
-data PIDs, DTC read/clear, and raw ISO 14230 messaging.
+freediag ships a standalone interactive CLI (`freediag` / `freediag.exe`) that
+can be used independently of nisprog for generic OBD-II diagnostics:
 
-**Starting freediag:**
 ```
-freediag [options]
+freediag [config_file]
 ```
 
-**Options:**
-| Option | Description |
-|--------|-------------|
-| (none) | Start interactive CLI |
-
-freediag is primarily driven via its interactive command line. The full
-manual is in `doc/Scantool-Manual.html`.
+Launches the `diag>` prompt. See `doc/Scantool-Manual.html` in the freediag
+source for full command reference.
 
 ---
 
-## Key Interactive Commands
+## Interface Adapters
 
-### Connection setup
+freediag supports several K-line adapter types. When used through nisprog:
 
-```
-set interface dumb
-set port COM3          # Windows: \\.\COM3   Linux: /dev/ttyUSB0
-set speed 10400        # K-line default
-set testerid 0xfc
-set destaddr 0x10
-set addrtype phys
-set l2protocol iso14230
-set initmode fast
-```
-
-Then connect:
-```
-up
-```
-
-### Diagnostic commands
-
-| Command | Description |
-|---------|-------------|
-| `up` | Bring K-line connection up (run after `set`) |
-| `down` | Disconnect |
-| `scan` | Scan for supported OBD-II services |
-| `get service 01 pid 0C` | Read live PID (e.g. RPM) |
-| `get dtc` | Read stored Diagnostic Trouble Codes |
-| `clear dtc` | Clear DTCs |
-| `debug l1 0x8c` | Enable verbose hex dump of all bytes sent/received |
-| `debug l1 0` | Disable debug output |
-| `quit` | Exit |
-
-**Example — read RPM and coolant temp:**
-```
-set interface dumb
-set port /dev/ttyUSB0
-up
-get service 01 pid 0C
-get service 01 pid 05
-down
-quit
-```
-
-**Example — read and clear DTCs:**
-```
-set interface dumb
-set port /dev/ttyUSB0
-up
-get dtc
-clear dtc
-down
-quit
-```
+| `set interface` value | Adapter type |
+|-----------------------|--------------|
+| `dumb`                | Dumb K-line adapter (most common) |
+| `dumb` + `set dumbopts 0x48` | Required for most dumb adapters |
+| `br_l0` / `br_l1`    | BR-series adapters |
+| `scl`                 | Serial Communication Layer adapters |
 
 ---
 
-## Supported Interfaces
+## Port Configuration
 
-freediag supports several K-line interface types. See
-`doc/Supported-Interfaces.html` for the full list. Common types:
+Set the serial port before connecting:
 
-| Interface | Description |
-|-----------|-------------|
-| `dumb` | Simple UART adapter (e.g. ELM327-style or DIY K-line bridge) |
-| `br1` | B&B Electronics serial interface |
-| `carsim` | Internal car simulator (testing only) |
+```
+# Windows
+set port \\.\COM19        # adjust COM number to match your device
 
-Set with `set interface <type>`.
+# Linux
+set port /dev/ttyUSB0     # or /dev/ttyS0 for physical serial
+```
 
 ---
 
 ## AI Summary & Gotchas
 
-**For AI assistants using freediag:**
+**For AI assistants using the nisprog + freediag stack:**
 
-- freediag is a **communication substrate** for nisprog. If you are doing
-  Nissan ROM flashing or dump operations, you will not call freediag
-  directly — nisprog does that internally.
-- Use the standalone `freediag` binary only for **generic OBD-II diagnosis**
-  (read DTCs, live PIDs, Mode 01–09) on any compatible vehicle.
-- **K-line vs CAN:** freediag handles K-line (ISO 14230 / KWP2000) only.
-  It does not support CAN-based OBD-II (ISO 15765). Most post-2008 vehicles
-  use CAN; check your vehicle's protocol before using.
-- **Timing sensitivity:** K-line communication is extremely timing-sensitive.
-  If you get framing errors or timeouts, try `set speed 10400` (the standard
-  init speed) and adjust inter-byte delays if the protocol stack exposes them.
-- **`dumb` interface:** A simple USB-to-serial adapter with a K-line level
-  shifter wired to the OBD-II pin 7. Do NOT use an ELM327 in AT-command mode
-  — set it to pass-through or use a direct UART interface.
-- The `debug l1 0x8c` flag dumps every byte in hex; essential for diagnosing
-  communication failures. Disable with `debug l1 0` when done.
-- Full protocol documentation: `doc/Scantool-Manual.html`,
-  `doc/OBD_knowledge.html`, `doc/dumb_interfaces.txt`.
+- freediag is **not a standalone flashing tool**. It provides transport only.
+  All ECU flash and dump logic lives in nisprog.
+- The `dumb` interface type with `dumbopts 0x48` works for the vast majority
+  of dumb K-line adapters (e.g. FTDI-based USB to K-line cables). If timing
+  problems occur, try adjusting `set dumbopts`.
+- freediag does not know which ECU is connected — ECU identification and
+  security key handling are nisprog responsibilities.
+- On Linux, add your user to the `dialout` group to access serial ports
+  without `sudo`: `sudo usermod -aG dialout $USER`
+- freediag's `libdiag` can be used directly as a C library for custom tools;
+  see `doc/` in the freediag source tree.
